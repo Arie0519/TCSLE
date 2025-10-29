@@ -67,6 +67,12 @@ public class PDRService implements SensorEventListener {
     private int Z = 0;  // 歩行状態
     private int lastZ = 0;
 
+    private long lastWriteTime = 0;
+    private static final long WRITE_INTERVAL = 100_000_000L; // 100ms (10Hz)
+    private StringBuilder csvBuffer = new StringBuilder();
+    private static final int BUFFER_SIZE = 10; // 10行ごとにフラッシュ
+    private int bufferCount = 0;
+
     // ========== カルマンフィルタ内蔵クラス ==========
     private class KalmanFilter {
         private double P = 1.0;  // 推定誤差共分散
@@ -139,10 +145,14 @@ public class PDRService implements SensorEventListener {
 
         // カルマンフィルタの初期化
         for (int i = 0; i < 3; i++) {
-            accKF[i] = new KalmanFilter(0.001, 0.1);
+            // 加速度計: ノイズが大きいためR値を高めに設定
+            accKF[i] = new KalmanFilter(0.01, 0.5);
+            // ジャイロ: ドリフトが小さいためQ値を小さく、R値も小さく
             gyroKF[i] = new KalmanFilter(0.001, 0.1);
         }
-        stepLengthKF = new KalmanFilter(0.001, 0.1);
+
+        // 歩幅推定: 中間的なパラメータ
+        stepLengthKF = new KalmanFilter(0.005, 0.2);
     }
 
     // ========== ルート情報設定 ==========
@@ -181,7 +191,7 @@ public class PDRService implements SensorEventListener {
 
     private void processGyroscope(float[] values) {
         for (int i = 0; i < 3; i++) {
-            float ωRaw = 2 * (values[i] - ωBias[i]);
+            float ωRaw = values[i] - ωBias[i];
             ω[i] = (float) gyroKF[i].update(ωRaw);
         }
     }
@@ -217,12 +227,25 @@ public class PDRService implements SensorEventListener {
     }
 
     private float estimateStepLength(float amax, float amin) {
+        // Weinberg式で歩幅計算
         float l = K * (float) Math.pow(amax - amin, 0.25);
+
+        // 最初の3歩はWeinbergのみ使用（履歴がないため）
+        if (stepCount <= 3) {
+            if (stepCount > 0) {
+                li[stepCount - 1] = l;
+            }
+            return (float) stepLengthKF.update(l);
+        }
+
+        // 4歩目以降はTCSLE適用
         float l_prev = (li[0] + li[1] + li[2]) / 3.0f;
 
+        // 履歴を更新
         System.arraycopy(li, 1, li, 0, 2);
         li[2] = l;
 
+        // TCSLE式を適用
         float L = q_tcsle * l_prev + (1 - q_tcsle) * l;
         return (float) stepLengthKF.update(L);
     }
@@ -407,18 +430,24 @@ public class PDRService implements SensorEventListener {
     private String generateSensorFileName() {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd", Locale.getDefault());
         String date = sdf.format(new Date());
-        return routeId + "_" + date + "_sensor.csv";
+        return routeId + "_" + date + "_Trial" + String.format(Locale.US, "%02d", trialNumber) + "_sensor.csv";
     }
 
     private String generateEventFileName() {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd", Locale.getDefault());
         String date = sdf.format(new Date());
-        return routeId + "_" + date + "_events.csv";
+        return routeId + "_" + date + "_Trial" + String.format(Locale.US, "%02d", trialNumber) + "_events.csv";
     }
 
     private void writeSensorData() {
         if (fileWriter == null) return;
 
+        long now = System.nanoTime();
+
+        // 書き込み頻度を10Hzに制限
+        if (now - lastWriteTime < WRITE_INTERVAL) return;
+
+        lastWriteTime = now;
         currentTime = System.nanoTime() - startTime;
         currentData = new SensorData(
                 currentTime, a.clone(), ω.clone(), stepCount,
@@ -511,6 +540,14 @@ public class PDRService implements SensorEventListener {
     private void closeCSVFiles() {
         if (fileWriter != null) {
             try {
+                // 残りのバッファを書き込み
+                if (csvBuffer.length() > 0) {
+                    fileWriter.write(csvBuffer.toString());
+                    csvBuffer.setLength(0);
+                    bufferCount = 0;
+                }
+
+                fileWriter.flush();
                 fileWriter.close();
                 Log.i(TAG, "CSV file closed");
             } catch (IOException e) {
@@ -519,6 +556,7 @@ public class PDRService implements SensorEventListener {
         }
         if (eventFileWriter != null) {
             try {
+                eventFileWriter.flush();
                 eventFileWriter.close();
                 Log.i(TAG, "Event file closed");
             } catch (IOException e) {

@@ -31,6 +31,9 @@ public class RouteManager {
     private int currentTrialNumber;
     private boolean isMeasuring;
 
+    private static final String TRIAL_PREFS_KEY = "trial_numbers";
+    private SharedPreferences trialPreferences;
+
     // 保存されたルート一覧
     private List<RoutePreset> savedRoutes;
 
@@ -190,6 +193,7 @@ public class RouteManager {
     public RouteManager(Context context) {
         this.context = context;
         this.preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+        this.trialPreferences = context.getSharedPreferences(TRIAL_PREFS_KEY, Context.MODE_PRIVATE);
         this.gson = new Gson();
         this.savedRoutes = new ArrayList<>();
 
@@ -331,21 +335,57 @@ public class RouteManager {
     }
 
     private int getNextTrialNumber(String routeId) {
-        String fileName = generateFileName(routeId);
-        File file = new File(context.getExternalFilesDir(null), fileName);
+        String key = getTrialKey(routeId);
+        int trialNumber = trialPreferences.getInt(key, 1);
+        Log.d(TAG, "Next trial number for " + routeId + ": " + trialNumber);
+        return trialNumber;
+    }
 
-        if (!file.exists()) {
-            return 1;
-        }
+    /**
+     * Trial番号管理用のキーを生成（ルートID + 日付）
+     */
+    private String getTrialKey(String routeId) {
+        SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd", Locale.getDefault());
+        String date = sdf.format(new Date());
+        return routeId + "_" + date;
+    }
 
-        // 実際の実装では、CSVファイルから最大Trial番号を取得
-        return 1; // 暫定的に1を返す
+    /**
+     * Trial番号をインクリメント
+     */
+    public void incrementTrialNumber(String routeId) {
+        String key = getTrialKey(routeId);
+        int currentTrial = trialPreferences.getInt(key, 1);
+        int nextTrial = currentTrial + 1;
+
+        trialPreferences.edit().putInt(key, nextTrial).apply();
+        Log.i(TAG, "Trial incremented: " + currentTrial + " -> " + nextTrial);
+    }
+
+    /**
+     * Trial番号をリセット（現在のTrialをやり直す）
+     */
+    public void resetCurrentTrial() {
+        // Trial番号は変更しない
+        // 測定状態のみリセット
+        resetMeasurementState();
+        Log.i(TAG, "Current trial reset");
+    }
+
+    /**
+     * 指定ルートのTrial番号を1にリセット
+     */
+    public void resetTrialNumber(String routeId) {
+        String key = getTrialKey(routeId);
+        trialPreferences.edit().putInt(key, 1).apply();
+        Log.i(TAG, "Trial number reset to 1 for " + routeId);
     }
 
     public String generateFileName(String routeId) {
         SimpleDateFormat sdf = new SimpleDateFormat("yyyyMMdd", Locale.getDefault());
         String date = sdf.format(new Date());
-        return routeId + "_" + date + ".csv";
+        int trialNumber = getCurrentTrialNumber();
+        return routeId + "_" + date + "_Trial" + String.format(Locale.US, "%02d", trialNumber) + ".csv";
     }
 
     // ========== Getterメソッド ==========
@@ -372,7 +412,7 @@ public class RouteManager {
     }
 
     public String getAdvertiseCountText() {
-        return String.format("%d回実行済み", advertiseCount);
+        return String.format("%s回実行済み", advertiseCount);
     }
 
     public String getTrialText() {

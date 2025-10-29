@@ -5,6 +5,8 @@
 
     <!-- 外部ストレージへの書き込みを宣言 -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
+    <!-- Android 13以降の通知権限 -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!-- BLE関連の利用を宣言 -->
     <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
@@ -12,6 +14,16 @@
     <uses-permission android:name="android.permission.BLUETOOTH_ADVERTISE" />
     <uses-permission android:name="android.permission.BLUETOOTH_CONNECT"/>
     <uses-permission android:name="android.permission.BLUETOOTH_SCAN" android:usesPermissionFlags="neverForLocation" tools:targetApi="s" />
+
+    <!-- バックグラウンド動作のための権限 -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+
+    <!-- ウェイクロック（画面OFF時も動作継続） -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
+    <!-- バッテリー最適化除外要求（オプション） -->
+    <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
     <!-- センサーハードウェアの利用を宣言 -->
     <uses-feature android:name="android.hardware.sensor.accelerometer" android:required="true" />
@@ -38,6 +50,17 @@
             </intent-filter>
 
         </activity>
+
+        <!-- Foreground Service宣言（バックグラウンド測定用） -->
+        <service
+            android:name=".PDRForegroundService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="センサーデータ収集" />
+        </service>
 
     </application>
 

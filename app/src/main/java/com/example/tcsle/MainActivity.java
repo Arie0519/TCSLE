@@ -10,6 +10,7 @@ import android.bluetooth.le.BluetoothLeAdvertiser;
 import android.content.Context;
 import android.content.Intent;
 import android.content.pm.PackageManager;
+import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Handler;
@@ -22,6 +23,17 @@ import android.widget.Button;
 import android.widget.Spinner;
 import android.widget.TextView;
 import android.widget.Toast;
+
+import android.content.ComponentName;
+import android.content.Intent;
+import android.content.ServiceConnection;
+import android.os.IBinder;
+import android.os.PowerManager;
+import android.provider.Settings;
+import android.app.NotificationChannel;
+import android.app.NotificationManager;
+import androidx.core.app.ActivityCompat;
+import androidx.core.content.ContextCompat;
 
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -53,12 +65,11 @@ public class MainActivity extends AppCompatActivity {
     private byte advFlag;
 
     // UI要素
-    private TextView tvAcceleration, tvGyroscope, tvStepCount, tvStepLength;
-    private TextView tvDistance, tvxPosition, tvyPosition, tvHeading;
-    private Button btnStart, btnStop, btnReset, btnAdvertise, btnBLEfinish;
+    private TextView tvStepCount, tvDistance, tvHeading;
+    private Button btnMainAction, btnReset, btnBLEfinish;
+    private TextView tvRouteInfo, tvTrialNumber, tvCurrentPoint;
     private MaterialSwitch switchBLE;
     private Spinner spinnerRoute;
-    private TextView tvCurrentPoint, tvTargetCoord, tvAdvertiseCount, tvTrialNumber, tvMeasurementStatus;
 
     // 状態管理
     public Handler handler;
@@ -67,10 +78,43 @@ public class MainActivity extends AppCompatActivity {
     private boolean isTracking = false;
     private ArrayAdapter<RouteManager.RoutePreset> routeAdapter;
 
+    // Foreground Service関連
+    private PDRForegroundService pdrForegroundService;
+    private boolean serviceBound = false;
+    private static final int REQUEST_CODE_POST_NOTIFICATIONS = 1001;
+    private static final int REQUEST_CODE_BATTERY_OPTIMIZATION = 1002;
+
+    // ServiceConnection
+    private ServiceConnection serviceConnection = new ServiceConnection() {
+        @Override
+        public void onServiceConnected(ComponentName name, IBinder service) {
+            PDRForegroundService.LocalBinder binder = (PDRForegroundService.LocalBinder) service;
+            pdrForegroundService = binder.getService();
+            serviceBound = true;
+            Log.d(TAG, "Service connected");
+        }
+
+        @Override
+        public void onServiceDisconnected(ComponentName name) {
+            serviceBound = false;
+            pdrForegroundService = null;
+            Log.d(TAG, "Service disconnected");
+        }
+    };
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+
+        // 通知チャンネル作成（Android 8.0以降必須）
+        createNotificationChannel();
+
+        // 通知権限のリクエスト（Android 13以降）
+        requestNotificationPermission();
+
+        // バッテリー最適化除外のリクエスト
+        requestBatteryOptimizationExemption();
 
         initializeServices();
         initializeViews();
@@ -78,7 +122,65 @@ public class MainActivity extends AppCompatActivity {
         setupRouteUI();
         setupButtons();
         setupHandler();
-        updateRouteUI();
+    }
+
+    /**
+     * 通知チャンネルの作成（Android 8.0以降必須）
+     */
+    private void createNotificationChannel() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            NotificationChannel channel = new NotificationChannel(
+                    PDRForegroundService.CHANNEL_ID,
+                    "PDR測定サービス",
+                    NotificationManager.IMPORTANCE_LOW
+            );
+            channel.setDescription("PDR測定中の通知を表示します");
+            channel.setShowBadge(false);
+
+            NotificationManager notificationManager = getSystemService(NotificationManager.class);
+            if (notificationManager != null) {
+                notificationManager.createNotificationChannel(channel);
+                Log.d(TAG, "Notification channel created");
+            }
+        }
+    }
+
+    /**
+     * 通知権限のリクエスト（Android 13以降必須）
+     */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS)
+                    != PackageManager.PERMISSION_GRANTED) {
+                ActivityCompat.requestPermissions(
+                        this,
+                        new String[]{Manifest.permission.POST_NOTIFICATIONS},
+                        REQUEST_CODE_POST_NOTIFICATIONS
+                );
+            }
+        }
+    }
+
+    /**
+     * バッテリー最適化除外のリクエスト（測定精度向上）
+     */
+    private void requestBatteryOptimizationExemption() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            String packageName = getPackageName();
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+
+            if (pm != null && !pm.isIgnoringBatteryOptimizations(packageName)) {
+                Intent intent = new Intent();
+                intent.setAction(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS);
+                intent.setData(Uri.parse("package:" + packageName));
+
+                try {
+                    startActivityForResult(intent, REQUEST_CODE_BATTERY_OPTIMIZATION);
+                } catch (Exception e) {
+                    Log.e(TAG, "Failed to request battery optimization exemption", e);
+                }
+            }
+        }
     }
 
     private void initializeServices() {
@@ -89,38 +191,23 @@ public class MainActivity extends AppCompatActivity {
 
     private void initializeViews() {
         // センサーデータ表示用
-        tvAcceleration = findViewById(R.id.accelerometerTextView);
-        tvGyroscope = findViewById(R.id.gyroscopeTextView);
         tvStepCount = findViewById(R.id.stepCountTextView);
-        tvStepLength = findViewById(R.id.stepLengthTextView);
         tvDistance = findViewById(R.id.distanceTextView);
-        tvxPosition = findViewById(R.id.xpositionTextView);
-        tvyPosition = findViewById(R.id.ypositionTextView);
         tvHeading = findViewById(R.id.headingTextView);
 
         // ボタン類
-        btnStart = findViewById(R.id.startButton);
-        btnStop = findViewById(R.id.stopButton);
+        btnMainAction = findViewById(R.id.btnMainAction);
         btnReset = findViewById(R.id.resetButton);
-        btnAdvertise = findViewById(R.id.advertiseButton);
         btnBLEfinish = findViewById(R.id.finishButton);
         switchBLE = findViewById(R.id.switchBLE);
 
         // ルート管理用
         spinnerRoute = findViewById(R.id.spinnerRoute);
-        tvCurrentPoint = findViewById(R.id.tvCurrentPoint);
-        tvTargetCoord = findViewById(R.id.tvTargetCoord);
-        tvAdvertiseCount = findViewById(R.id.tvAdvertiseCount);
+        tvRouteInfo = findViewById(R.id.tvRouteInfo);
         tvTrialNumber = findViewById(R.id.tvTrialNumber);
-        tvMeasurementStatus = findViewById(R.id.tvMeasurementStatus);
+        tvCurrentPoint = findViewById(R.id.tvCurrentPoint);
 
-        btnStop.setEnabled(false);
         switchBLE.setChecked(false);
-
-        // ボタンテキストの設定
-        btnStart.setText("測定開始");
-        btnStop.setText("測定完了");
-        btnAdvertise.setText("中間地点通過");
     }
 
     private void setupBLE() {
@@ -164,7 +251,6 @@ public class MainActivity extends AppCompatActivity {
             @Override
             public void onItemSelected(AdapterView<?> parent, View view, int position, long id) {
                 if (!routeManager.isMeasuring()) {
-                    updateRouteUI();
                 }
             }
             @Override
@@ -173,16 +259,88 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void setupButtons() {
-        btnStart.setOnClickListener(v -> startTracking());
-        btnStop.setOnClickListener(v -> stopTracking());
+        // 巨大メインボタン
+        btnMainAction.setOnClickListener(v -> handleMainButtonClick());
+
+        // リセットボタン
         btnReset.setOnClickListener(v -> resetTracking());
-        btnAdvertise.setOnClickListener(v -> advertise());
+
+        // BLE終了信号ボタン
         btnBLEfinish.setOnClickListener(v -> finishBLEAdvertising());
 
+        // BLEスイッチ
         switchBLE.setOnCheckedChangeListener((buttonView, isChecked) -> {
             bleFlag = isChecked;
             btnBLEfinish.setEnabled(isChecked);
         });
+    }
+
+    /**
+     * 巨大メインボタンのクリック処理
+     */
+    private void handleMainButtonClick() {
+
+        if (!routeManager.isMeasuring()) {
+            // 待機中 → 測定開始
+            startTracking();
+        } else if (!routeManager.isLastPoint()) {
+            // 測定中・中間地点 → 地点通過
+            passPoint();
+        } else {
+            // 測定中・最終地点 → 測定完了
+            completeTracking();
+        }
+
+        // ボタン表示更新
+        updateMainButton();
+    }
+
+    /**
+     * 巨大メインボタンの表示更新
+     */
+    private void updateMainButton() {
+        if (!routeManager.isMeasuring()) {
+            // 状態1: 待機中
+            RouteManager.RoutePreset selectedRoute = (RouteManager.RoutePreset) spinnerRoute.getSelectedItem();
+            String routeName = selectedRoute != null ? selectedRoute.getRouteName() : "ルート未選択";
+
+            btnMainAction.setText("測定開始\n" + routeName);
+            btnMainAction.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF28a745));
+            btnMainAction.setEnabled(selectedRoute != null && selectedRoute.isValid());
+
+        } else if (!routeManager.isLastPoint()) {
+            // 状態2-N: 測定中・中間地点
+            RouteManager.RoutePoint targetPoint = routeManager.getCurrentTargetPoint();
+
+            String buttonText = String.format("地点%d通過\n\n目標: (%.1f, %.1f)\n現在: (%.2f, %.2f)\n\nアドバタイズ %s",
+                    routeManager.getCurrentRoutePoint(),
+                    targetPoint != null ? targetPoint.getX() : 0.0f,
+                    targetPoint != null ? targetPoint.getY() : 0.0f,
+                    pdrService.getX(),
+                    pdrService.getY(),
+                    routeManager.getAdvertiseCountText()
+            );
+
+            btnMainAction.setText(buttonText);
+            btnMainAction.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFF007bff));
+            btnMainAction.setEnabled(true);
+
+        } else {
+            // 状態N+1: 測定中・最終地点
+            RouteManager.RoutePoint targetPoint = routeManager.getCurrentTargetPoint();
+
+            String buttonText = String.format("測定完了\n\n最終地点: (%.1f, %.1f)\n現在: (%.2f, %.2f)\n\nアドバタイズ %s",
+                    targetPoint != null ? targetPoint.getX() : 0.0f,
+                    targetPoint != null ? targetPoint.getY() : 0.0f,
+                    pdrService.getX(),
+                    pdrService.getY(),
+                    routeManager.getAdvertiseCountText()
+            );
+
+            btnMainAction.setText(buttonText);
+            btnMainAction.setBackgroundTintList(android.content.res.ColorStateList.valueOf(0xFFdc3545));
+            btnMainAction.setEnabled(true);
+        }
     }
 
     private void setupHandler() {
@@ -312,49 +470,27 @@ public class MainActivity extends AppCompatActivity {
 
         pdrService.start();
         recordRouteEvent("START");
+        routeManager.executeAdvertise();
+        recordRouteEvent("ADVERTISE");
 
         if (bleFlag) {
             single400msBLEAdvertise((byte) 0xBE);
         }
 
-        updateButtonStates(true);
+        // Foreground Service起動
+        startForegroundService();
+
+        btnReset.setEnabled(true);
+        spinnerRoute.setEnabled(false);
         handler.post(updateRunnable);
-        updateRouteUI();
+        updateMainButton();
+        updateStatusBar();
     }
 
-    private void stopTracking() {
-        recordRouteEvent("STOP");
-        pdrService.stop();
-        routeManager.stopMeasurement();
-
-        if (bleFlag) {
-            single400msBLEAdvertise((byte) 0xBE);
-        }
-
-        if (isTracking) {
-            isTracking = false;
-        }
-
-        updateButtonStates(false);
-        handler.removeCallbacks(updateRunnable);
-        updateRouteUI();
-    }
-
-    private void resetTracking() {
-        if (isTracking) {
-            isTracking = false;
-        }
-
-        pdrService.reset();
-        routeManager.resetMeasurementState();
-
-        updateButtonStates(false);
-        resetUI();
-        updateRouteUI();
-        handler.removeCallbacks(updateRunnable);
-    }
-
-    private void advertise() {
+    /**
+     * 中間地点通過処理
+     */
+    private void passPoint() {
         if (!routeManager.isMeasuring()) {
             Toast.makeText(this, "測定を開始してください", Toast.LENGTH_SHORT).show();
             return;
@@ -368,33 +504,114 @@ public class MainActivity extends AppCompatActivity {
             single400msBLEAdvertise((byte) 0xBE);
         }
 
-        // 最終地点でなければ自動的に次の地点へ進行
+        // 次の地点へ進行
         if (!routeManager.isLastPoint()) {
             routeManager.moveToNextPoint();
-            recordRouteEvent("NEXT_POINT");
             Toast.makeText(this, "次の地点に進行しました", Toast.LENGTH_SHORT).show();
-        } else {
-            Toast.makeText(this, "最終地点に到達しました", Toast.LENGTH_SHORT).show();
         }
 
-        updateRouteUI();
+        updateMainButton();
+        updateStatusBar();
     }
 
-    private void moveToNextPoint() {
-        if (!routeManager.isMeasuring()) {
-            Toast.makeText(this, "測定中ではありません", Toast.LENGTH_SHORT).show();
-            return;
+    /**
+     * Foreground Service起動
+     */
+    private void startForegroundService() {
+        Intent serviceIntent = new Intent(this, PDRForegroundService.class);
+
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            startForegroundService(serviceIntent);
+        } else {
+            startService(serviceIntent);
         }
 
-        if (routeManager.isLastPoint()) {
-            Toast.makeText(this, "最終地点です", Toast.LENGTH_SHORT).show();
-            return;
+        // Service接続
+        bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE);
+
+        Log.d(TAG, "Foreground service started");
+    }
+
+    /**
+     * 測定完了処理
+     */
+    private void completeTracking() {
+        // 最終地点でのアドバタイズ
+        routeManager.executeAdvertise();
+        recordRouteEvent("ADVERTISE");
+
+        if (bleFlag) {
+            single400msBLEAdvertise((byte) 0xBE);
         }
 
-        routeManager.moveToNextPoint();
-        recordRouteEvent("NEXT_POINT");
-        updateRouteUI();
-        Toast.makeText(this, "次の地点に移動しました", Toast.LENGTH_SHORT).show();
+        // 測定停止
+        recordRouteEvent("STOP");
+        pdrService.stop();
+        routeManager.stopMeasurement();
+
+        // Trial番号をインクリメント
+        RouteManager.RoutePreset currentRoute = routeManager.getCurrentRoute();
+        if (currentRoute != null) {
+            routeManager.incrementTrialNumber(currentRoute.getRouteId());
+            Toast.makeText(this, "Trial完了！次回はTrial " +
+                            String.format("%02d", routeManager.getCurrentTrialNumber()) + "です",
+                    Toast.LENGTH_LONG).show();
+        }
+
+        if (isTracking) {
+            isTracking = false;
+        }
+
+        // Foreground Service停止
+        stopForegroundService();
+
+        btnReset.setEnabled(false);
+        spinnerRoute.setEnabled(true);
+        handler.removeCallbacks(updateRunnable);
+        updateMainButton();
+        updateStatusBar();
+    }
+
+    /**
+     * Foreground Service停止
+     */
+    private void stopForegroundService() {
+        // Service切断
+        if (serviceBound) {
+            try {
+                unbindService(serviceConnection);
+                serviceBound = false;
+            } catch (Exception e) {
+                Log.e(TAG, "Error unbinding service", e);
+            }
+        }
+
+        // Service停止
+        Intent serviceIntent = new Intent(this, PDRForegroundService.class);
+        stopService(serviceIntent);
+
+        Log.d(TAG, "Foreground service stopped");
+    }
+
+    private void resetTracking() {
+        if (isTracking) {
+            isTracking = false;
+        }
+
+        pdrService.reset();
+        routeManager.resetCurrentTrial(); // Trial番号はそのまま
+
+        // Foreground Service停止
+        stopForegroundService();
+
+        btnReset.setEnabled(false);
+        spinnerRoute.setEnabled(true);
+        resetUI();
+        updateMainButton();
+        updateStatusBar();
+        handler.removeCallbacks(updateRunnable);
+
+        Toast.makeText(this, "リセットしました。同じTrialで再測定できます。", Toast.LENGTH_SHORT).show();
     }
 
     private void single400msBLEAdvertise(byte flag) {
@@ -405,9 +622,8 @@ public class MainActivity extends AppCompatActivity {
     private void finishBLEAdvertising() {
         if (bleFlag) {
             btnBLEfinish.setEnabled(false);
-            btnStart.setEnabled(false);
-            btnStop.setEnabled(false);
-            btnAdvertise.setEnabled(false);
+            btnMainAction.setEnabled(false);
+            btnReset.setEnabled(true);
 
             startBLEAdvertising((byte)0xFF);
             Toast.makeText(this, "Sending BLE finish signal", Toast.LENGTH_SHORT).show();
@@ -427,7 +643,6 @@ public class MainActivity extends AppCompatActivity {
                         handler.postDelayed(() -> {
                             stopBLEAdvertising();
                             btnBLEfinish.setEnabled(true);
-                            updateButtonStates(isTracking);
                             Toast.makeText(MainActivity.this, "BLE finish signal completed", Toast.LENGTH_SHORT).show();
                         }, 500);
                     }
@@ -438,83 +653,42 @@ public class MainActivity extends AppCompatActivity {
 
     // =========================== UI更新 ===========================
 
+    /**
+     * 上部ステータスバーの更新
+     */
+    private void updateStatusBar() {
+        // ルート情報
+        RouteManager.RoutePreset currentRoute = routeManager.getCurrentRoute();
+        if (currentRoute != null) {
+            tvRouteInfo.setText(currentRoute.getRouteName());
+        } else {
+            RouteManager.RoutePreset selectedRoute = (RouteManager.RoutePreset) spinnerRoute.getSelectedItem();
+            tvRouteInfo.setText(selectedRoute != null ? selectedRoute.getRouteName() : "未選択");
+        }
+
+        // Trial番号
+        tvTrialNumber.setText(routeManager.getTrialText());
+
+        // 地点情報
+        tvCurrentPoint.setText(routeManager.getCurrentRouteProgressText());
+    }
+
     private void updateUI() {
-        float[] a = pdrService.getAcceleration();
-        float[] ω = pdrService.getGyroscope();
-
-        tvAcceleration.setText(String.format("ax: %.2f   ay: %.2f   az: %.2f", a[0], a[1], a[2]));
-        tvGyroscope.setText(String.format("ωx: %.2f   ωy: %.2f   ωz: %.2f", ω[0], ω[1], ω[2]));
-
         int steps = pdrService.getStepCount();
         double distance = pdrService.getDistance();
+
         tvStepCount.setText(String.format("%d", steps));
-
-        double stepLength = (steps > 0) ? (distance / steps) : 0.0;
-        tvStepLength.setText(String.format("%.2f m", stepLength));
-
         tvDistance.setText(String.format("%.2f m", distance));
-        tvxPosition.setText(String.format("X: %.2f m", pdrService.getX()));
-        tvyPosition.setText(String.format("Y: %.2f m", pdrService.getY()));
         tvHeading.setText(String.format("%.1f°", Math.toDegrees(pdrService.getHeading())));
 
-        updateRouteUI();
-    }
-
-    private void updateRouteUI() {
-        tvCurrentPoint.setText("現在地点: " + routeManager.getCurrentRouteProgressText());
-
-        RouteManager.RoutePoint targetPoint = routeManager.getCurrentTargetPoint();
-        if (targetPoint != null) {
-            tvTargetCoord.setText(String.format("目標座標: (%.1f, %.1f)",
-                    targetPoint.getX(), targetPoint.getY()));
-        } else {
-            tvTargetCoord.setText("目標座標: 未設定");
-        }
-
-        tvAdvertiseCount.setText("アドバタイズ: " + routeManager.getAdvertiseCountText());
-        tvTrialNumber.setText("試行回数: " + routeManager.getTrialText());
-
-        if (routeManager.isMeasuring()) {
-            RouteManager.RoutePreset currentRoute = routeManager.getCurrentRoute();
-            if (currentRoute != null) {
-                tvMeasurementStatus.setText("測定中 - " + currentRoute.getRouteId() + " " +
-                        routeManager.getTrialText());
-            } else {
-                tvMeasurementStatus.setText("測定中");
-            }
-        } else {
-            tvMeasurementStatus.setText("待機中");
-        }
-
-        // アドバタイズボタンのテキスト更新
-        if (routeManager.isMeasuring() && targetPoint != null) {
-            if (routeManager.isLastPoint()) {
-                btnAdvertise.setText("最終地点通過");
-            } else {
-                btnAdvertise.setText(String.format("地点%d通過",
-                        routeManager.getCurrentRoutePoint()));
-            }
-        } else {
-            btnAdvertise.setText("中間地点通過");
-        }
-    }
-
-    private void updateButtonStates(boolean measuring) {
-        btnStart.setEnabled(!measuring);
-        btnAdvertise.setEnabled(measuring);
-        btnStop.setEnabled(measuring);
-        btnReset.setEnabled(!measuring);
-        spinnerRoute.setEnabled(!measuring);
+        updateMainButton();
+        updateStatusBar();
     }
 
     private void resetUI() {
-        tvAcceleration.setText("ax: 0.00   ay: 0.00   az: 0.00");
-        tvGyroscope.setText("ωx: 0.00   ωy: 0.00   ωz: 0.00");
+        // レイアウトに存在するTextViewのみ更新
         tvStepCount.setText("0");
-        tvStepLength.setText("0.00 m");
         tvDistance.setText("0.00 m");
-        tvxPosition.setText("X: 0.00 m");
-        tvyPosition.setText("Y: 0.00 m");
         tvHeading.setText("0.0°");
     }
 
@@ -535,10 +709,79 @@ public class MainActivity extends AppCompatActivity {
     @Override
     protected void onDestroy() {
         super.onDestroy();
-        stopTracking();
-        if (bluetoothLeAdvertiser != null) {
-            stopBLEAdvertising();
+
+        Log.d(TAG, "onDestroy called");
+
+        // Handler完全停止（メモリリーク対策）
+        if (handler != null) {
+            handler.removeCallbacksAndMessages(null);
+            handler = null;
         }
-        routeManager.saveRoutes();
+
+        // BLE停止
+        if (bluetoothLeAdvertiser != null) {
+            try {
+                stopBLEAdvertising();
+            } catch (Exception e) {
+                Log.e(TAG, "Error stopping BLE", e);
+            }
+            bluetoothLeAdvertiser = null;
+        }
+
+        // Service切断
+        if (serviceBound) {
+            try {
+                unbindService(serviceConnection);
+                serviceBound = false;
+            } catch (Exception e) {
+                Log.e(TAG, "Error unbinding service", e);
+            }
+        }
+
+        // ルート保存
+        if (routeManager != null) {
+            routeManager.saveRoutes();
+        }
+
+        // リソース解放
+        pdrService = null;
+        routeManager = null;
+        bluetoothAdapter = null;
+
+        Log.d(TAG, "Resources released");
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] grantResults) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults);
+
+        if (requestCode == REQUEST_CODE_POST_NOTIFICATIONS) {
+            if (grantResults.length > 0 && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
+                Log.d(TAG, "Notification permission granted");
+                Toast.makeText(this, "通知権限が許可されました", Toast.LENGTH_SHORT).show();
+            } else {
+                Log.w(TAG, "Notification permission denied");
+                Toast.makeText(this, "通知権限が必要です。バックグラウンド動作に影響があります。",
+                        Toast.LENGTH_LONG).show();
+            }
+        }
+    }
+
+    @Override
+    protected void onActivityResult(int requestCode, int resultCode, Intent data) {
+        super.onActivityResult(requestCode, resultCode, data);
+
+        if (requestCode == REQUEST_CODE_BATTERY_OPTIMIZATION) {
+            PowerManager pm = (PowerManager) getSystemService(Context.POWER_SERVICE);
+            String packageName = getPackageName();
+
+            if (pm != null && pm.isIgnoringBatteryOptimizations(packageName)) {
+                Log.d(TAG, "Battery optimization exemption granted");
+                Toast.makeText(this, "バッテリー最適化が除外されました", Toast.LENGTH_SHORT).show();
+            } else {
+                Log.w(TAG, "Battery optimization exemption denied");
+                Toast.makeText(this, "バッテリー最適化除外が推奨されます", Toast.LENGTH_LONG).show();
+            }
+        }
     }
 }
