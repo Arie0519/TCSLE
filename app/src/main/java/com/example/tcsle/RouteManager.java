@@ -203,22 +203,31 @@ public class RouteManager {
     }
 
     private void initializeDefaultRoutes() {
-        // RouteA: 3地点ルート
+        // RouteA: 9地点ルート
         RoutePreset routeA = new RoutePreset("RouteA", "ルートA");
-        routeA.addRoutePoint(0.0f, 0.0f);
+        routeA.addRoutePoint(0.0f, 1.0f);
+        routeA.addRoutePoint(1.0f, 1.0f);
+        routeA.addRoutePoint(2.0f, 1.0f);
+        routeA.addRoutePoint(3.0f, 1.0f);
         routeA.addRoutePoint(4.0f, 1.0f);
-        routeA.addRoutePoint(8.0f, 2.0f);
+        routeA.addRoutePoint(5.0f, 1.0f);
+        routeA.addRoutePoint(6.0f, 1.0f);
+        routeA.addRoutePoint(7.0f, 1.0f);
+        routeA.addRoutePoint(8.0f, 1.0f);
 
         // RouteB: 2地点ルート
         RoutePreset routeB = new RoutePreset("RouteB", "ルートB");
         routeB.addRoutePoint(0.0f, 0.0f);
         routeB.addRoutePoint(8.0f, 0.0f);
 
-        // RouteC: 3地点ルート（L字型）
+        // RouteC: 6地点ルート（L字型）
         RoutePreset routeC = new RoutePreset("RouteC", "ルートC");
-        routeC.addRoutePoint(0.0f, 0.0f);
+        routeC.addRoutePoint(0.0f, 1.0f);
+        routeC.addRoutePoint(1.0f, 1.0f);
+        routeC.addRoutePoint(2.0f, 1.0f);
+        routeC.addRoutePoint(3.0f, 1.0f);
+        routeC.addRoutePoint(4.0f, 1.0f);
         routeC.addRoutePoint(4.0f, 0.0f);
-        routeC.addRoutePoint(4.0f, 2.0f);
 
         savedRoutes.add(routeA);
         savedRoutes.add(routeB);
