@@ -28,10 +28,10 @@ public class PDRService implements SensorEventListener {
     private static final float NS2S = 1.0f / 1000000000.0f;
     private static final float kf = 0.8f;  // CF補正係数
     private static final float ke = 0.1f;  // エラー積分係数
-    private static final float A = 10.12f;  // ピークドメイン閾値 元：10.0f
-    private static final float tmin = 0.34f; // 最小時間間隔 元：0.25f
-    private static final float tmax = 1.30f;  // 最大時間間隔 元：2.0f
-    private static final float K = 0.55f;  // Weinberg係数 元：0.97f
+    private static final float A = 10.0f;  // ピークドメイン閾値 元：10.0f
+    private static final float tmin = 0.25f; // 最小時間間隔 元：0.25f
+    private static final float tmax = 2.0f;  // 最大時間間隔 元：2.0f
+    private static final float K = 0.97f;  // Weinberg係数 元：0.97f
     private static final float q_tcsle = 0.60f;  // 比例係数 元：0.60f
     private static final float dt = 0.01f;  // 時間間隔
 
@@ -502,6 +502,26 @@ public class PDRService implements SensorEventListener {
             eventFileWriter.append(line);
             eventFileWriter.flush();
             Log.d(TAG, "Route event recorded: " + event + " at point " + routePoint);
+        } catch (IOException e) {
+            Log.e(TAG, "Error writing to route event file", e);
+        }
+    }
+
+    // 🆕 Distance指定版のオーバーロード
+    public void writeRouteEvent(String event, SensorData data, int trialNumber,
+                                int routePoint, float targetX, float targetY, double fixedDistance) {
+        if (eventFileWriter == null || !isRouteMode) return;
+
+        try {
+            String line = String.format(Locale.US,
+                    "%d,Trial%02d,%s,%d,%.1f,%.1f,%.3f,%.3f,%.3f\n",
+                    data.timestamp, trialNumber, event, routePoint,
+                    targetX, targetY, data.x, data.y, fixedDistance
+            );
+
+            eventFileWriter.append(line);
+            eventFileWriter.flush();
+            Log.d(TAG, "Route event recorded: " + event + " at point " + routePoint + " (fixed distance: " + fixedDistance + ")");
         } catch (IOException e) {
             Log.e(TAG, "Error writing to route event file", e);
         }

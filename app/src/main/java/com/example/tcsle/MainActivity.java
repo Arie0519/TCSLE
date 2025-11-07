@@ -56,6 +56,8 @@ public class MainActivity extends AppCompatActivity {
     // Services
     private PDRService pdrService;
     private RouteManager routeManager;
+    // 🆕 最後のADVERTISE時のセンサーデータ保存用
+    private PDRService.SensorData lastAdvertiseData = null;
 
     // BLE関連
     private BluetoothAdapter bluetoothAdapter;
@@ -466,7 +468,7 @@ public class MainActivity extends AppCompatActivity {
             // 測定開始前に必ずリセット（二重保険）
             pdrService.reset();
 
-            // 🆕 ルートの開始地点を初期位置として設定
+            // ルートの開始地点を初期位置として設定
             RouteManager.RoutePoint firstPoint = selectedRoute.getRoutePoint(0);
             if (firstPoint != null) {
                 pdrService.setInitialPosition(firstPoint.getX(), firstPoint.getY());
@@ -483,6 +485,9 @@ public class MainActivity extends AppCompatActivity {
         recordRouteEvent("START");
         routeManager.executeAdvertise();
         recordRouteEvent("ADVERTISE");
+
+        // 🆕 START時のADVERTISEデータを保存
+        lastAdvertiseData = pdrService.getCurrentData();
 
         if (bleFlag) {
             single400msBLEAdvertise((byte) 0xBE);
@@ -507,18 +512,21 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        // 現在地点でのアドバタイズ実行
+        // 先に次の地点へ進行（RoutePoint更新）
+        if (!routeManager.isLastPoint()) {
+            routeManager.moveToNextPoint();
+            Toast.makeText(this, "地点" + routeManager.getCurrentRoutePoint() + "に到達しました", Toast.LENGTH_SHORT).show();
+        }
+
+        // 到達地点でのアドバタイズ実行
         routeManager.executeAdvertise();
         recordRouteEvent("ADVERTISE");
 
+        // 🆕 ADVERTISE時のデータを保存（STOP用）
+        lastAdvertiseData = pdrService.getCurrentData();
+
         if (bleFlag) {
             single400msBLEAdvertise((byte) 0xBE);
-        }
-
-        // 次の地点へ進行
-        if (!routeManager.isLastPoint()) {
-            routeManager.moveToNextPoint();
-            Toast.makeText(this, "次の地点に進行しました", Toast.LENGTH_SHORT).show();
         }
 
         updateMainButton();
@@ -547,23 +555,31 @@ public class MainActivity extends AppCompatActivity {
      * 測定完了処理
      */
     private void completeTracking() {
-        // 最終地点でのアドバタイズ
-        routeManager.executeAdvertise();
-        recordRouteEvent("ADVERTISE");
-
+        // BLE終了信号のみ送信
         if (bleFlag) {
             single400msBLEAdvertise((byte) 0xBE);
         }
 
-        // 測定停止
-        recordRouteEvent("STOP");
+        // 🆕 測定停止（最後のADVERTISE時点のデータを使用、Distance=0）
+        if (lastAdvertiseData != null) {
+            RouteManager.RoutePoint targetPoint = routeManager.getCurrentTargetPoint();
+            if (targetPoint != null) {
+                // 最後のADVERTISE時点の座標を使用、Distance=0を明示的に指定
+                pdrService.writeRouteEvent("STOP", lastAdvertiseData, routeManager.getCurrentTrialNumber(),
+                        routeManager.getCurrentRoutePoint(), targetPoint.getX(), targetPoint.getY(), 0.0);
+            }
+        }
+
         pdrService.stop();
         routeManager.stopMeasurement();
 
-        // 🆕 PDRサービスのリセット（座標・距離・lasttotalDistanceなどをクリア）
+        // PDRサービスのリセット
         pdrService.reset();
 
-        // Trial番号をインクリメント
+        // 🆕 保存データもクリア
+        lastAdvertiseData = null;
+
+        // Trial番号インクリメント
         RouteManager.RoutePreset currentRoute = routeManager.getCurrentRoute();
         if (currentRoute != null) {
             routeManager.incrementTrialNumber(currentRoute.getRouteId());
@@ -614,6 +630,9 @@ public class MainActivity extends AppCompatActivity {
 
         pdrService.reset();
         routeManager.resetCurrentTrial(); // Trial番号はそのまま
+
+        // 🆕 保存データもクリア
+        lastAdvertiseData = null;
 
         // Foreground Service停止
         stopForegroundService();
