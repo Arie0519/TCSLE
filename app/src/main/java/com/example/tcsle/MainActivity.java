@@ -463,6 +463,17 @@ public class MainActivity extends AppCompatActivity {
         }
 
         if (!isTracking) {
+            // 測定開始前に必ずリセット（二重保険）
+            pdrService.reset();
+
+            // 🆕 ルートの開始地点を初期位置として設定
+            RouteManager.RoutePoint firstPoint = selectedRoute.getRoutePoint(0);
+            if (firstPoint != null) {
+                pdrService.setInitialPosition(firstPoint.getX(), firstPoint.getY());
+                Log.d(TAG, String.format("Initial position set to: (%.1f, %.1f)",
+                        firstPoint.getX(), firstPoint.getY()));
+            }
+
             routeManager.startMeasurement(selectedRoute.getRouteId());
             pdrService.setRouteInfo(selectedRoute.getRouteId(), routeManager.getCurrentTrialNumber());
             isTracking = true;
@@ -548,6 +559,9 @@ public class MainActivity extends AppCompatActivity {
         recordRouteEvent("STOP");
         pdrService.stop();
         routeManager.stopMeasurement();
+
+        // 🆕 PDRサービスのリセット（座標・距離・lasttotalDistanceなどをクリア）
+        pdrService.reset();
 
         // Trial番号をインクリメント
         RouteManager.RoutePreset currentRoute = routeManager.getCurrentRoute();

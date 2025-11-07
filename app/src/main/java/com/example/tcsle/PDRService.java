@@ -451,7 +451,7 @@ public class PDRService implements SensorEventListener {
         currentTime = System.nanoTime() - startTime;
         currentData = new SensorData(
                 currentTime, a.clone(), ω.clone(), stepCount,
-                Xk, Yk, φi[2], totalDistance, ap
+                getX(), getY(), φi[2], totalDistance, ap
         );
 
         try {
@@ -515,7 +515,7 @@ public class PDRService implements SensorEventListener {
         lastStepTime = System.nanoTime();
 
         currentData = new SensorData(0, new float[]{0, 0, 0}, new float[]{0, 0, 0},
-                stepCount, Xk, Yk, φi[2], totalDistance, ap);
+                stepCount, getX(), getY(), φi[2], totalDistance, ap);
         writeSensorData();
 
         sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
@@ -535,6 +535,7 @@ public class PDRService implements SensorEventListener {
         q = new float[]{1.0f, 0.0f, 0.0f, 0.0f};
         Z = 0; lasttotalDistance = 0.0; isRouteMode = false;
         routeId = null; trialNumber = 0;
+        // 注意: reset()後に初期位置を設定する場合は、setInitialPosition()を呼び直すこと
     }
 
     private void closeCSVFiles() {
@@ -567,8 +568,9 @@ public class PDRService implements SensorEventListener {
 
     // ========== Getterメソッド ==========
 
-    public double getX() { return Xk; }
-    public double getY() { return Yk; }
+    // 出力時にXとYを入れ替え（内部計算はそのまま）
+    public double getX() { return Yk; }
+    public double getY() { return Xk; }
     public double getDistance() { return totalDistance; }
     public int getStepCount() { return stepCount; }
     public float getHeading() { return φi[2]; }
@@ -576,6 +578,21 @@ public class PDRService implements SensorEventListener {
     public float[] getGyroscope() { return ω; }
     public float getAp() { return ap; }
     public SensorData getCurrentData() { return currentData; }
+
+    // 🆕 初期位置設定メソッド
+    /**
+     * PDRの初期位置を設定
+     * @param x X座標（出力座標系）
+     * @param y Y座標（出力座標系）
+     */
+    public void setInitialPosition(double x, double y) {
+        // ステップ2でgetX()=Yk, getY()=Xkと入れ替えたため、
+        // 内部座標系では逆に設定する
+        this.Yk = x;
+        this.Xk = y;
+        Log.i(TAG, String.format("Initial position set: X=%.2f, Y=%.2f (internal: Xk=%.2f, Yk=%.2f)",
+                x, y, Xk, Yk));
+    }
 
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {}
