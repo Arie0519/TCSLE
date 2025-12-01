@@ -193,6 +193,10 @@ public class RouteManager {
     public RouteManager(Context context) {
         this.context = context;
         this.preferences = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE);
+
+        // ★この1行を追加して一度実行すると、保存データが消えます
+//        preferences.edit().clear().apply();
+
         this.trialPreferences = context.getSharedPreferences(TRIAL_PREFS_KEY, Context.MODE_PRIVATE);
         this.gson = new Gson();
         this.savedRoutes = new ArrayList<>();
@@ -203,35 +207,55 @@ public class RouteManager {
     }
 
     private void initializeDefaultRoutes() {
-        // RouteA: 9地点ルート
-        RoutePreset routeA = new RoutePreset("RouteA", "ルートA");
-        routeA.addRoutePoint(0.0f, 1.0f);
-        routeA.addRoutePoint(1.0f, 1.0f);
-        routeA.addRoutePoint(2.0f, 1.0f);
-        routeA.addRoutePoint(3.0f, 1.0f);
-        routeA.addRoutePoint(4.0f, 1.0f);
-        routeA.addRoutePoint(5.0f, 1.0f);
-        routeA.addRoutePoint(6.0f, 1.0f);
-        routeA.addRoutePoint(7.0f, 1.0f);
-        routeA.addRoutePoint(8.0f, 1.0f);
+        savedRoutes.clear();
 
-        // RouteB: 2地点ルート
-        RoutePreset routeB = new RoutePreset("RouteB", "ルートB");
-        routeB.addRoutePoint(0.0f, 0.0f);
-        routeB.addRoutePoint(8.0f, 0.0f);
+        // Route_1m
+        RoutePreset r1 = new RoutePreset("Route_1m", "Route_1m");
+        r1.addRoutePoint(0.0f, 1.0f);
+        r1.addRoutePoint(1.0f, 1.0f);
+        savedRoutes.add(r1);
 
-        // RouteC: 6地点ルート（L字型）
-        RoutePreset routeC = new RoutePreset("RouteC", "ルートC");
-        routeC.addRoutePoint(0.0f, 1.0f);
-        routeC.addRoutePoint(1.0f, 1.0f);
-        routeC.addRoutePoint(2.0f, 1.0f);
-        routeC.addRoutePoint(3.0f, 1.0f);
-        routeC.addRoutePoint(4.0f, 1.0f);
-        routeC.addRoutePoint(4.0f, 0.0f);
+        // Route_2m
+        RoutePreset r2 = new RoutePreset("Route_2m", "Route_2m");
+        r2.addRoutePoint(0.0f, 1.0f);
+        r2.addRoutePoint(2.0f, 1.0f);
+        savedRoutes.add(r2);
 
-        savedRoutes.add(routeA);
-        savedRoutes.add(routeB);
-        savedRoutes.add(routeC);
+        // Route_3m
+        RoutePreset r3 = new RoutePreset("Route_3m", "Route_3m");
+        r3.addRoutePoint(0.0f, 1.0f);
+        r3.addRoutePoint(3.0f, 1.0f);
+        savedRoutes.add(r3);
+
+        // Route_4m
+        RoutePreset r4 = new RoutePreset("Route_4m", "Route_4m");
+        r4.addRoutePoint(0.0f, 1.0f);
+        r4.addRoutePoint(4.0f, 1.0f);
+        savedRoutes.add(r4);
+
+        // Route_5m
+        RoutePreset r5 = new RoutePreset("Route_5m", "Route_5m");
+        r5.addRoutePoint(0.0f, 1.0f);
+        r5.addRoutePoint(5.0f, 1.0f);
+        savedRoutes.add(r5);
+
+        // Route_6m
+        RoutePreset r6 = new RoutePreset("Route_6m", "Route_6m");
+        r6.addRoutePoint(0.0f, 1.0f);
+        r6.addRoutePoint(6.0f, 1.0f);
+        savedRoutes.add(r6);
+
+        // Route_7m
+        RoutePreset r7 = new RoutePreset("Route_7m", "Route_7m");
+        r7.addRoutePoint(0.0f, 1.0f);
+        r7.addRoutePoint(7.0f, 1.0f);
+        savedRoutes.add(r7);
+
+        // Route_8m
+        RoutePreset r8 = new RoutePreset("Route_8m", "Route_8m");
+        r8.addRoutePoint(0.0f, 1.0f);
+        r8.addRoutePoint(8.0f, 1.0f);
+        savedRoutes.add(r8);
     }
 
     private void loadSavedRoutes() {

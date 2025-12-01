@@ -70,8 +70,22 @@ public class PDRService implements SensorEventListener {
     private long lastWriteTime = 0;
     private static final long WRITE_INTERVAL = 100_000_000L; // 100ms (10Hz)
     private StringBuilder csvBuffer = new StringBuilder();
-    private static final int BUFFER_SIZE = 10; // 10行ごとにフラッシュ
+    private static final int BUFFER_SIZE = 100; // 100行ごとにフラッシュ
     private int bufferCount = 0;
+
+    // ========== リサンプリング（補間）用変数 ==========
+    // ターゲットとする周波数: 100Hz = 10ms = 10,000,000ナノ秒
+    private static final long TARGET_INTERVAL_NS = 10_000_000L;
+
+    // 加速度用
+    private long lastAccTime = 0;
+    private float[] lastAccValues = new float[3];
+    private long nextAccTargetTime = 0;
+
+    // ジャイロ用
+    private long lastGyroTime = 0;
+    private float[] lastGyroValues = new float[3];
+    private long nextGyroTargetTime = 0;
 
     // ========== カルマンフィルタ内蔵クラス ==========
     private class KalmanFilter {
@@ -166,19 +180,79 @@ public class PDRService implements SensorEventListener {
     // ========== センサー処理 ==========
     @Override
     public void onSensorChanged(SensorEvent event) {
-        switch (event.sensor.getType()) {
-            case Sensor.TYPE_ACCELEROMETER:
-                processAccelerometer(event.values);
+        if (event.sensor.getType() == Sensor.TYPE_ACCELEROMETER) {
+            processSensorWithResampling(event, true);
+        } else if (event.sensor.getType() == Sensor.TYPE_GYROSCOPE) {
+            processSensorWithResampling(event, false);
+        }
+    }
+
+    /**
+     * リサンプリング（線形補間）処理
+     * 不定期なセンサーデータを固定周期（100Hz）に変換して処理に回す
+     */
+    private void processSensorWithResampling(SensorEvent event, boolean isAccel) {
+        long currentTime = event.timestamp;
+        float[] currentValues = event.values;
+
+        // 対象の変数を参照（参照渡しができないため、ifで分岐）
+        long lastTime = isAccel ? lastAccTime : lastGyroTime;
+        float[] lastValues = isAccel ? lastAccValues : lastGyroValues;
+        long nextTargetTime = isAccel ? nextAccTargetTime : nextGyroTargetTime;
+
+        // 初回データ受信時
+        if (lastTime == 0) {
+            if (isAccel) {
+                lastAccTime = currentTime;
+                System.arraycopy(currentValues, 0, lastAccValues, 0, 3);
+                // 次のターゲットを「現在の時間 + 10ms」に設定
+                nextAccTargetTime = currentTime + TARGET_INTERVAL_NS;
+            } else {
+                lastGyroTime = currentTime;
+                System.arraycopy(currentValues, 0, lastGyroValues, 0, 3);
+                nextGyroTargetTime = currentTime + TARGET_INTERVAL_NS;
+            }
+            return;
+        }
+
+        // ターゲット時間を跨いでいるかチェック（補間処理ループ）
+        // センサーの間隔が広く、一気に2回分(20ms)進んだ場合などに対応するためwhileループ
+        while (nextTargetTime <= currentTime) {
+            // 線形補間係数 alpha (0.0 ～ 1.0)
+            // alpha = (欲しい時間 - 前回の時間) / (今回の時間 - 前回の時間)
+            float alpha = (float) (nextTargetTime - lastTime) / (currentTime - lastTime);
+
+            float[] interpolatedValues = new float[3];
+            for (int i = 0; i < 3; i++) {
+                interpolatedValues[i] = lastValues[i] + (currentValues[i] - lastValues[i]) * alpha;
+            }
+
+            // ★ 補間されたきれいなデータでPDRメイン処理を実行 ★
+            if (isAccel) {
+                processAccelerometer(interpolatedValues);
                 detectStep();
-                writeSensorData();
-                break;
-            case Sensor.TYPE_GYROSCOPE:
-                processGyroscope(event.values);
+                writeSensorData(); // 全データ書き込み
+            } else {
+                processGyroscope(interpolatedValues);
                 complementaryFilter();
                 updateQuaternion();
                 updateOrientation();
-                writeSensorData();
-                break;
+                writeSensorData(); // 全データ書き込み
+            }
+
+            // 次のターゲットを10ms進める
+            nextTargetTime += TARGET_INTERVAL_NS;
+        }
+
+        // 今回の値を「前回」として保存
+        if (isAccel) {
+            lastAccTime = currentTime;
+            System.arraycopy(currentValues, 0, lastAccValues, 0, 3);
+            nextAccTargetTime = nextTargetTime; // 更新されたターゲット時間を保存
+        } else {
+            lastGyroTime = currentTime;
+            System.arraycopy(currentValues, 0, lastGyroValues, 0, 3);
+            nextGyroTargetTime = nextTargetTime;
         }
     }
 
@@ -442,12 +516,12 @@ public class PDRService implements SensorEventListener {
     private void writeSensorData() {
         if (fileWriter == null) return;
 
-        long now = System.nanoTime();
+//        long now = System.nanoTime();
 
-        // 書き込み頻度を10Hzに制限
-        if (now - lastWriteTime < WRITE_INTERVAL) return;
-
-        lastWriteTime = now;
+//        書き込み頻度を10Hzに制限
+//        if (now - lastWriteTime < WRITE_INTERVAL) return;
+//
+//        lastWriteTime = now;
         currentTime = System.nanoTime() - startTime;
         currentData = new SensorData(
                 currentTime, a.clone(), ω.clone(), stepCount,
@@ -532,14 +606,21 @@ public class PDRService implements SensorEventListener {
     public void start() {
         openCSVFiles();
         startTime = System.nanoTime();
-        lastStepTime = System.nanoTime();
 
+        // リサンプリング変数の初期化
+        lastAccTime = 0;
+        lastGyroTime = 0;
+
+        // ... (既存の初期化処理) ...
         currentData = new SensorData(0, new float[]{0, 0, 0}, new float[]{0, 0, 0},
                 stepCount, getX(), getY(), φi[2], totalDistance, ap);
-        writeSensorData();
+        // writeSensorData(); // ← ここでの書き込みは削除するか、初期値として残す
 
-        sensorManager.registerListener(this, accelerometer, SensorManager.SENSOR_DELAY_GAME);
-        sensorManager.registerListener(this, gyroscope, SensorManager.SENSOR_DELAY_GAME);
+        // 【変更点】 5000マイクロ秒 (5ms = 200Hz) を要求
+        // 100Hzを作るために、倍のレートで取得して補間するのが理想的です
+        int samplingPeriodUs = 5000;
+        sensorManager.registerListener(this, accelerometer, samplingPeriodUs);
+        sensorManager.registerListener(this, gyroscope, samplingPeriodUs);
     }
 
     public void stop() {
