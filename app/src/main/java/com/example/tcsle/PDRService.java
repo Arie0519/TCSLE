@@ -26,13 +26,13 @@ public class PDRService implements SensorEventListener {
 
     // ========== PDR関連定数 ==========
     private static final float NS2S = 1.0f / 1000000000.0f;
-    private static final float kf = 0.8f;  // CF補正係数
-    private static final float ke = 0.1f;  // エラー積分係数
-    private static final float A = 10.0f;  // ピークドメイン閾値 元：10.0f
+    private static final float kf = 1.2f;  // CF補正係数
+    private static final float ke = 0.01f;  // エラー積分係数
+    private static final float A = 10.364138f;  // ピークドメイン閾値 元：10.0f
     private static final float tmin = 0.25f; // 最小時間間隔 元：0.25f
     private static final float tmax = 2.0f;  // 最大時間間隔 元：2.0f
-    private static final float K = 0.97f;  // Weinberg係数 元：0.97f
-    private static final float q_tcsle = 0.60f;  // 比例係数 元：0.60f
+    private static final float K = 0.80f;  // Weinberg係数 元：0.97f
+    private static final float q_tcsle = 0.30f;  // 比例係数 元：0.60f
     private static final float dt = 0.01f;  // 時間間隔
 
     // バイアス補正値
@@ -166,7 +166,7 @@ public class PDRService implements SensorEventListener {
         }
 
         // 歩幅推定: 中間的なパラメータ
-        stepLengthKF = new KalmanFilter(0.005, 0.2);
+        stepLengthKF = new KalmanFilter(0.1, 0.308952);
     }
 
     // ========== ルート情報設定 ==========
