@@ -417,7 +417,7 @@ public class MainActivity extends AppCompatActivity {
 
     private byte[] createManufacturerData(byte flag) {
         Calendar calendar = Calendar.getInstance();
-        ByteBuffer buffer = ByteBuffer.allocate(10);
+        ByteBuffer buffer = ByteBuffer.allocate(12);
         buffer.order(ByteOrder.LITTLE_ENDIAN);
         buffer.put((byte) (calendar.get(Calendar.MONTH)+1));
         buffer.put((byte) calendar.get(Calendar.DAY_OF_MONTH));
@@ -429,14 +429,14 @@ public class MainActivity extends AppCompatActivity {
         // PDRから現在位置を取得
         int pos_x = 0, pos_y = 0;
         if (pdrService != null) {
-            pos_x = (int) Math.round(pdrService.getX() * 10);
-            pos_y = (int) Math.round(pdrService.getY() * 10);
-            pos_x = Math.max(-128, Math.min(127, pos_x));
-            pos_y = Math.max(-128, Math.min(127, pos_y));
+            pos_x = (int) Math.round(pdrService.getX() * 1000);
+            pos_y = (int) Math.round(pdrService.getY() * 1000);
+            pos_x = Math.max(-32767, Math.min(32767, pos_x));
+            pos_y = Math.max(-32767, Math.min(32767, pos_y));
         }
 
-        buffer.put((byte) pos_x);
-        buffer.put((byte) pos_y);
+        buffer.putShort((short) pos_x);
+        buffer.putShort((short) pos_y);
         buffer.put(flag);
 
         return buffer.array();
@@ -557,7 +557,7 @@ public class MainActivity extends AppCompatActivity {
     private void completeTracking() {
         // BLE終了信号のみ送信
         if (bleFlag) {
-            single400msBLEAdvertise((byte) 0xBE);
+            // single400msBLEAdvertise((byte) 0xBE);
         }
 
         // 🆕 測定停止（最後のADVERTISE時点のデータを使用、Distance=0）
