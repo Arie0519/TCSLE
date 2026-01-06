@@ -245,7 +245,7 @@ public class MainActivity extends AppCompatActivity {
 
     private void setupRouteUI() {
         List<RouteManager.RoutePreset> routes = routeManager.getAllRoutes();
-        routeAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_item, routes);
+        routeAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, routes);
         routeAdapter.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item);
         spinnerRoute.setAdapter(routeAdapter);
 
@@ -464,22 +464,35 @@ public class MainActivity extends AppCompatActivity {
             return;
         }
 
-        if (!isTracking) {
-            // 測定開始前に必ずリセット（二重保険）
-            pdrService.reset();
+        // 既にトラッキング中なら何もしない
+        if (isTracking) {
+            return;
+        }
 
-            // ルートの開始地点を初期位置として設定
-            RouteManager.RoutePoint firstPoint = selectedRoute.getRoutePoint(0);
-            if (firstPoint != null) {
-                pdrService.setInitialPosition(firstPoint.getX(), firstPoint.getY());
-                Log.d(TAG, String.format("Initial position set to: (%.1f, %.1f)",
-                        firstPoint.getX(), firstPoint.getY()));
+        // 測定開始前に必ずリセット
+        pdrService.reset();
+
+        // ルートの開始地点を初期位置として設定
+        RouteManager.RoutePoint firstPoint = selectedRoute.getRoutePoint(0);
+        if (firstPoint != null) {
+            pdrService.setInitialPosition(firstPoint.getX(), firstPoint.getY());
+
+            // ルートが2点以上ある場合のみ実行
+            if (selectedRoute.getRoutePointCount() >= 2) {
+                RouteManager.RoutePoint secondPoint = selectedRoute.getRoutePoint(1);
+                pdrService.setInitialRouteVector(
+                        firstPoint.getX(), firstPoint.getY(),
+                        secondPoint.getX(), secondPoint.getY()
+                );
             }
 
-            routeManager.startMeasurement(selectedRoute.getRouteId());
-            pdrService.setRouteInfo(selectedRoute.getRouteId(), routeManager.getCurrentTrialNumber());
-            isTracking = true;
+            Log.d(TAG, String.format("Initial position set to: (%.1f, %.1f)",
+                    firstPoint.getX(), firstPoint.getY()));
         }
+
+        routeManager.startMeasurement(selectedRoute.getRouteId());
+        pdrService.setRouteInfo(selectedRoute.getRouteId(), routeManager.getCurrentTrialNumber());
+        isTracking = true;
 
         pdrService.start();
         recordRouteEvent("START");
@@ -515,18 +528,27 @@ public class MainActivity extends AppCompatActivity {
         // 先に次の地点へ進行（RoutePoint更新）
         if (!routeManager.isLastPoint()) {
             routeManager.moveToNextPoint();
-            Toast.makeText(this, "地点" + routeManager.getCurrentRoutePoint() + "に到達しました", Toast.LENGTH_SHORT).show();
-        }
+            RouteManager.RoutePoint currentPoint = routeManager.getCurrentTargetPoint();
 
-        // 到達地点でのアドバタイズ実行
-        routeManager.executeAdvertise();
-        recordRouteEvent("ADVERTISE");
+            if (currentPoint != null) {
+                // アドバタイズポイントかどうかで条件を分岐
+                if (currentPoint.isAdvertisePoint()) {
+                    // アドバタイズポイント：電波発信
+                    routeManager.executeAdvertise();
+                    recordRouteEvent("ADVERTISE");
+                    lastAdvertiseData = pdrService.getCurrentData();
 
-        // 🆕 ADVERTISE時のデータを保存（STOP用）
-        lastAdvertiseData = pdrService.getCurrentData();
+                    if (bleFlag) {
+                        single400msBLEAdvertise((byte) 0xBE);
+                    }
 
-        if (bleFlag) {
-            single400msBLEAdvertise((byte) 0xBE);
+                    Toast.makeText(this, "地点" + routeManager.getCurrentRoutePoint() + "でアドバタイズしました", Toast.LENGTH_SHORT).show();
+                } else {
+                    // 中間地点：通過のみ
+                    recordRouteEvent("PASS");
+                    Toast.makeText(this, "地点" + routeManager.getCurrentRoutePoint() + "を通過しました", Toast.LENGTH_SHORT).show();
+                }
+            }
         }
 
         updateMainButton();
@@ -627,6 +649,9 @@ public class MainActivity extends AppCompatActivity {
         if (isTracking) {
             isTracking = false;
         }
+
+        // PDRを停止してCSVファイルを閉じる
+        pdrService.stop();
 
         pdrService.reset();
         routeManager.resetCurrentTrial(); // Trial番号はそのまま

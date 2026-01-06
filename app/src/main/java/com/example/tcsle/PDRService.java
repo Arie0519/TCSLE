@@ -57,6 +57,13 @@ public class PDRService implements SensorEventListener {
     private double Yk = 0.0;  // Y座標
     private double totalDistance = 0.0;
 
+    private double startXk = 0.0;
+    private double startYk = 0.0;
+    private double initialHeadingOffset = 0.0;
+
+    private double measurementStartX = 0.0;
+    private double measurementStartY = 0.0;
+
     private int stepCount = 0;
     private long lastStepTime = 0;
     private float ap;
@@ -411,9 +418,15 @@ public class PDRService implements SensorEventListener {
     }
 
     private void updatePosition(float l) {
-        Xk = Xk + l * Math.sin(φi[2]);
-        Yk = Yk + l * Math.cos(φi[2]);
-        totalDistance += l;
+        // 現在の推定方位(φi[2])に，初期オフセットを加算して地図上の方位にする
+        double currentMapHeading = φi[2] + initialHeadingOffset;
+
+        // 座標更新 (オフセット済み角度を使用)
+        Xk = Xk + l * Math.sin(currentMapHeading);
+        Yk = Yk + l * Math.cos(currentMapHeading);
+
+        // ユークリッド距離
+        totalDistance = Math.sqrt(Math.pow(Xk - startXk, 2) + Math.pow(Yk - startYk, 2));
     }
 
     // ========== CSV書き込み機能 ==========
@@ -564,8 +577,10 @@ public class PDRService implements SensorEventListener {
         if (eventFileWriter == null || !isRouteMode) return;
 
         try {
-            double distance = data.totalDistance - lasttotalDistance;
-            lasttotalDistance = data.totalDistance;
+            // 開始地点からのユークリッド距離を計算
+            double dx = data.x - measurementStartX;
+            double dy = data.y - measurementStartY;
+            double distance = Math.sqrt(dx * dx + dy * dy);
 
             String line = String.format(Locale.US,
                     "%d,Trial%02d,%s,%d,%.1f,%.1f,%.3f,%.3f,%.3f\n",
@@ -630,12 +645,15 @@ public class PDRService implements SensorEventListener {
 
     public void reset() {
         Xk = 0.0; Yk = 0.0; totalDistance = 0.0; stepCount = 0;
+        startXk = 0.0; startYk = 0.0; initialHeadingOffset = 0.0;
         lastStepTime = System.nanoTime();
         Arrays.fill(li, 0f); Arrays.fill(φi, 0f);
         ap_max = 0; ap_min = 0; isStepDetecting = false;
         q = new float[]{1.0f, 0.0f, 0.0f, 0.0f};
         Z = 0; lasttotalDistance = 0.0; isRouteMode = false;
         routeId = null; trialNumber = 0;
+        measurementStartX = 0.0;
+        measurementStartY = 0.0;
         // 注意: reset()後に初期位置を設定する場合は、setInitialPosition()を呼び直すこと
     }
 
@@ -687,12 +705,37 @@ public class PDRService implements SensorEventListener {
      * @param y Y座標（出力座標系）
      */
     public void setInitialPosition(double x, double y) {
-        // ステップ2でgetX()=Yk, getY()=Xkと入れ替えたため、
-        // 内部座標系では逆に設定する
+        // ステップ2でgetX()=Yk, getY()=Xkと入れ替えている定義に合わせる
+        // 外部座標(x, y) -> 内部座標(Yk, Xk)
         this.Yk = x;
         this.Xk = y;
+
+        // 開始地点として記録
+        this.startXk = this.Xk;
+        this.startYk = this.Yk;
+
+        // 測定開始時の座標を記録 (ユークリッド距離計算用)
+        this.measurementStartX = x;
+        this.measurementStartY = y;
+
+        // 距離をリセット
+        this.totalDistance = 0.0;
+
         Log.i(TAG, String.format("Initial position set: X=%.2f, Y=%.2f (internal: Xk=%.2f, Yk=%.2f)",
                 x, y, Xk, Yk));
+    }
+
+    // 初期ベクトルの設定
+    public void setInitialRouteVector(double startX, double startY, double nextX, double nextY) {
+        // 地図上のベクトル (dx, dy)
+        double dx = nextX - startX;
+        double dy = nextY - startY;
+
+        // 角度計算
+        this.initialHeadingOffset = Math.atan2(dy, dx);
+
+        Log.i(TAG, String.format("Initial Vector: (%.1f, %.1f) -> (%.1f, %.1f), Offset: %.1f deg",
+                startX, startY, nextX, nextY, Math.toDegrees(this.initialHeadingOffset)));
     }
 
     @Override

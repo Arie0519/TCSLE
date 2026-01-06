@@ -42,26 +42,32 @@ public class RouteManager {
         private float x;
         private float y;
         private int pointNumber;
+        private boolean isAdvertisePoint;
 
-        public RoutePoint(int pointNumber, float x, float y) {
+        public RoutePoint(int pointNumber, float x, float y, boolean isAdvertisePoint) {
             this.pointNumber = pointNumber;
             this.x = x;
             this.y = y;
+            this.isAdvertisePoint = isAdvertisePoint;
         }
 
         // Getters
         public float getX() { return x; }
         public float getY() { return y; }
         public int getPointNumber() { return pointNumber; }
+        public boolean isAdvertisePoint() { return isAdvertisePoint; }
 
         // Setters
         public void setX(float x) { this.x = x; }
         public void setY(float y) { this.y = y; }
         public void setPointNumber(int pointNumber) { this.pointNumber = pointNumber; }
+        public void setAdvertisePoint(boolean advertisePoint) { this.isAdvertisePoint = advertisePoint; }
 
         @Override
         public String toString() {
-            return String.format("地点%d (%.1f, %.1f)", pointNumber, x, y);
+
+            String advertiseMarker = isAdvertisePoint ? "[ADV]" : "";
+            return String.format("地点%d (%.1f, %.1f)%s", pointNumber, x, y, advertiseMarker);
         }
 
         @Override
@@ -71,7 +77,8 @@ public class RouteManager {
             RoutePoint that = (RoutePoint) obj;
             return Float.compare(that.x, x) == 0 &&
                     Float.compare(that.y, y) == 0 &&
-                    pointNumber == that.pointNumber;
+                    pointNumber == that.pointNumber &&
+                    isAdvertisePoint == that.isAdvertisePoint;
         }
 
         @Override
@@ -79,6 +86,7 @@ public class RouteManager {
             int result = Float.hashCode(x);
             result = 31 * result + Float.hashCode(y);
             result = 31 * result + pointNumber;
+            result = 31 * result + Boolean.hashCode(isAdvertisePoint);
             return result;
         }
     }
@@ -119,13 +127,18 @@ public class RouteManager {
         public void setRouteName(String routeName) { this.routeName = routeName; }
 
         // Route point management
-        public void addRoutePoint(RoutePoint point) {
-            routePoints.add(point);
+        public void addRoutePoint(RoutePoint point) {routePoints.add(point);
         }
 
         public void addRoutePoint(float x, float y) {
             int pointNumber = routePoints.size() + 1;
-            routePoints.add(new RoutePoint(pointNumber, x, y));
+            boolean isAdvertisePoint = (pointNumber == 1) || (pointNumber == routePoints.size() + 1);
+            routePoints.add(new RoutePoint(pointNumber, x, y, isAdvertisePoint));
+        }
+
+        public void addRoutePoint(float x, float y, boolean isAdvertisePoint) {
+            int pointNumber = routePoints.size() + 1;
+            routePoints.add(new RoutePoint(pointNumber, x, y, isAdvertisePoint));
         }
 
         public void removeRoutePoint(int index) {
@@ -211,51 +224,58 @@ public class RouteManager {
 
         // Route_1m
         RoutePreset r1 = new RoutePreset("Route_1m", "Route_1m");
-        r1.addRoutePoint(0.0f, 1.0f);
-        r1.addRoutePoint(1.0f, 1.0f);
+        r1.addRoutePoint(0.0f, 1.0f, true);
+        r1.addRoutePoint(1.0f, 1.0f, true);
         savedRoutes.add(r1);
 
         // Route_2m
         RoutePreset r2 = new RoutePreset("Route_2m", "Route_2m");
-        r2.addRoutePoint(0.0f, 1.0f);
-        r2.addRoutePoint(2.0f, 1.0f);
+        r2.addRoutePoint(0.0f, 1.0f, true);
+        r2.addRoutePoint(2.0f, 1.0f, true);
         savedRoutes.add(r2);
 
         // Route_3m
         RoutePreset r3 = new RoutePreset("Route_3m", "Route_3m");
-        r3.addRoutePoint(0.0f, 1.0f);
-        r3.addRoutePoint(3.0f, 1.0f);
+        r3.addRoutePoint(0.0f, 1.0f, true);
+        r3.addRoutePoint(3.0f, 1.0f, true);
         savedRoutes.add(r3);
 
         // Route_4m
         RoutePreset r4 = new RoutePreset("Route_4m", "Route_4m");
-        r4.addRoutePoint(0.0f, 1.0f);
-        r4.addRoutePoint(4.0f, 1.0f);
+        r4.addRoutePoint(0.0f, 1.0f, true);
+        r4.addRoutePoint(4.0f, 1.0f, true);
         savedRoutes.add(r4);
 
         // Route_5m
         RoutePreset r5 = new RoutePreset("Route_5m", "Route_5m");
-        r5.addRoutePoint(0.0f, 1.0f);
-        r5.addRoutePoint(5.0f, 1.0f);
+        r5.addRoutePoint(0.0f, 1.0f, true);
+        r5.addRoutePoint(5.0f, 1.0f, true);
         savedRoutes.add(r5);
 
         // Route_6m
         RoutePreset r6 = new RoutePreset("Route_6m", "Route_6m");
-        r6.addRoutePoint(0.0f, 1.0f);
-        r6.addRoutePoint(6.0f, 1.0f);
+        r6.addRoutePoint(0.0f, 1.0f, true);
+        r6.addRoutePoint(6.0f, 1.0f, true);
         savedRoutes.add(r6);
 
         // Route_7m
         RoutePreset r7 = new RoutePreset("Route_7m", "Route_7m");
-        r7.addRoutePoint(0.0f, 1.0f);
-        r7.addRoutePoint(7.0f, 1.0f);
+        r7.addRoutePoint(0.0f, 1.0f, true);
+        r7.addRoutePoint(7.0f, 1.0f, true);
         savedRoutes.add(r7);
 
         // Route_8m
         RoutePreset r8 = new RoutePreset("Route_8m", "Route_8m");
-        r8.addRoutePoint(0.0f, 1.0f);
-        r8.addRoutePoint(8.0f, 1.0f);
+        r8.addRoutePoint(0.0f, 1.0f, true);
+        r8.addRoutePoint(8.0f, 1.0f, true);
         savedRoutes.add(r8);
+
+        // Route_L
+        RoutePreset r9 = new RoutePreset("Route_L", "Route_L");
+        r9.addRoutePoint(0.0f, 0.0f, true);
+        r9.addRoutePoint(4.0f, 0.0f, false);
+        r9.addRoutePoint(4.0f, 2.0f, true);
+        savedRoutes.add(r9);
     }
 
     private void loadSavedRoutes() {
