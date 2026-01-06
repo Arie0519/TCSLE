@@ -421,9 +421,12 @@ public class PDRService implements SensorEventListener {
         // 現在の推定方位(φi[2])に，初期オフセットを加算して地図上の方位にする
         double currentMapHeading = φi[2] + initialHeadingOffset;
 
+        // 符号を反転（左回転を正にする）
+        double correctedHeading = -currentMapHeading;
+
         // 座標更新 (オフセット済み角度を使用)
-        Xk = Xk + l * Math.sin(currentMapHeading);
-        Yk = Yk + l * Math.cos(currentMapHeading);
+        Xk = Xk + l * Math.sin(correctedHeading);
+        Yk = Yk + l * Math.cos(correctedHeading);
 
         // ユークリッド距離
         totalDistance = Math.sqrt(Math.pow(Xk - startXk, 2) + Math.pow(Yk - startYk, 2));
