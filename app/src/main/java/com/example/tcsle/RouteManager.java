@@ -276,6 +276,44 @@ public class RouteManager {
         r9.addRoutePoint(4.0f, 0.0f, false);
         r9.addRoutePoint(4.0f, 2.0f, true);
         savedRoutes.add(r9);
+
+        // Route_C
+        RoutePreset r10 = new RoutePreset("Route_C", "Route_C");
+        r10.addRoutePoint(0.0f, 0.0f, true);
+        r10.addRoutePoint(4.0f, 0.0f, false);
+        r10.addRoutePoint(4.0f, 2.0f, false);
+        r10.addRoutePoint(0.0f, 2.0f, true);
+        savedRoutes.add(r10);
+
+        // Route_30cm
+        RoutePreset r30 = new RoutePreset("Route_30cm", "Route_30cm");
+        r30.addRoutePoint(0.0f, 1.0f, true);
+        r30.addRoutePoint(0.3f, 1.0f, true);
+        savedRoutes.add(r30);
+
+        // Route_70cm
+        RoutePreset r70 = new RoutePreset("Route_70cm", "Route_70cm");
+        r70.addRoutePoint(0.0f, 1.0f, true);
+        r70.addRoutePoint(0.7f, 1.0f, true);
+        savedRoutes.add(r70);
+
+        // Route_90cm
+        RoutePreset r90 = new RoutePreset("Route_90cm", "Route_90cm");
+        r90.addRoutePoint(0.0f, 1.0f, true);
+        r90.addRoutePoint(0.9f, 1.0f, true);
+        savedRoutes.add(r90);
+
+        // Route_110cm
+        RoutePreset r110 = new RoutePreset("Route_110cm", "Route_110cm");
+        r110.addRoutePoint(0.0f, 1.0f, true);
+        r110.addRoutePoint(1.1f, 1.0f, true);
+        savedRoutes.add(r110);
+
+        // Route_130cm
+        RoutePreset r130 = new RoutePreset("Route_130cm", "Route_130cm");
+        r130.addRoutePoint(0.0f, 1.0f, true);
+        r130.addRoutePoint(1.3f, 1.0f, true);
+        savedRoutes.add(r130);
     }
 
     private void loadSavedRoutes() {
